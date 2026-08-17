@@ -162,6 +162,29 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(ops[0]!.record.attributes).toContainEqual({ key: 'telemetry.op', value: { stringValue: 'shutdown' } })
   })
 
+  it('adds trusted deployment resource attributes without allowing harness identity override', async () => {
+    const { url, captures } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url },
+      resourceAttributes: { 'aegis.provider': 'dsh', 'aegis.session_id': 'session-1' },
+    })
+    ctx.sessions.create(SessionId('resource'), { meta: {} }).append('turn/start', { turn: 1 })
+    await fiber.dispose()
+
+    const resource = captures[0]!.body.resourceLogs[0]!.resource.attributes
+    expect(resource).toContainEqual({ key: 'aegis.provider', value: { stringValue: 'dsh' } })
+    expect(resource).toContainEqual({ key: 'aegis.session_id', value: { stringValue: 'session-1' } })
+
+    expect(() => new OpenTelemetrySessionBackend(new Context(), {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url },
+      resourceAttributes: { 'service.name': 'not-dsh' },
+    })).toThrow('resourceAttributes contains an invalid or reserved key "service.name"')
+  })
+
   it('drains records enqueued after a timer export began: dispose during an in-flight batch', async () => {
     // The backend implements NO flush() — the batch processor exports on its
     // own cadence, and shutdown's internal drain is complete exactly because

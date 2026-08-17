@@ -106,6 +106,11 @@ export interface Config {
    * which this plugin fills); the SDK owns and documents these knobs.
    */
   processor?: Omit<BatchLogRecordProcessorOptions, 'exporter'>
+  /**
+   * Additional string resource attributes for a trusted deployment boundary.
+   * Reserved harness identity keys cannot be replaced.
+   */
+  resourceAttributes?: Record<string, string>
   /** Maximum time spent awaiting the SDK provider's complete shutdown path. */
   shutdownTimeoutMillis?: number
 }
@@ -121,6 +126,7 @@ export const Config: z<Config> = z.object({
   mode: z.union(Object.values(SessionTelemetryMode)).default(DEFAULT_TELEMETRY_MODE),
   exporter: z.any(),
   processor: z.any(),
+  resourceAttributes: z.any(),
   shutdownTimeoutMillis: z.number(),
 })
 
@@ -130,6 +136,21 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MILLIS = 3_000
 // Node clamps larger timer delays to one millisecond. This is a runtime
 // protocol limit, not a deployment default.
 const MAX_TIMER_DELAY_MILLIS = 2_147_483_647
+
+const RESERVED_RESOURCE_ATTRIBUTES = new Set(['service.name', 'service.version', 'user.id'])
+
+function additionalResourceAttributes(attributes: Config['resourceAttributes']): Record<string, string> {
+  if (attributes === undefined) return {}
+  if (typeof attributes !== 'object' || attributes === null || Array.isArray(attributes)) {
+    throw new Error('session-telemetry-otel: resourceAttributes must be an object of string values')
+  }
+  for (const [key, value] of Object.entries(attributes)) {
+    if (key.length === 0 || typeof value !== 'string' || RESERVED_RESOURCE_ATTRIBUTES.has(key)) {
+      throw new Error(`session-telemetry-otel: resourceAttributes contains an invalid or reserved key ${JSON.stringify(key)}`)
+    }
+  }
+  return attributes
+}
 
 /** Severity mapping from the Service Definition's three-level vocabulary to OTel severity numbers. */
 const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
@@ -202,6 +223,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
         // batch on the Resource rather than per record: the collector
         // aggregates by Resource, and the id is process-stable anyway.
         'user.id': getOrCreateAnonymousUserId(),
+        ...additionalResourceAttributes(config.resourceAttributes),
       }),
       processors: [
         new BatchLogRecordProcessor({
