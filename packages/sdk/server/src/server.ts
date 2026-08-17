@@ -234,18 +234,34 @@ export class HarnessSdkJsonRpcServer {
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
-    const handle = await this.ctx.agents.create({
-      sessionId: SessionId(sessionId),
-      meta: { cwd: this.cwd },
-      agentOptions: {
-        provider: this.provider,
-        model: this.model,
-        ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
-      },
-    })
+    const agentOptions = {
+      provider: this.provider,
+      model: this.model,
+      ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
+    }
+    const id = SessionId(sessionId)
+    const handle = await this.resumeOrCreate(id, agentOptions)
     const rec: SessionRecord = { handle }
     this.sessions.set(sessionId, rec)
     return rec
+  }
+
+  /** Resume a durable JSONL session when this fresh runtime already owns its id. */
+  private async resumeOrCreate(
+    sessionId: SessionId,
+    agentOptions: { provider: string; model: string; maxTokens?: number },
+  ): Promise<AgentHandle> {
+    const persistence = this.ctx.get('sessionPersistence') as { inspect?: (id: SessionId) => Promise<unknown> } | undefined
+    if (typeof persistence?.inspect !== 'function') {
+      return this.ctx.agents.create({ sessionId, meta: { cwd: this.cwd }, agentOptions })
+    }
+    try {
+      await persistence.inspect(sessionId)
+      return await this.ctx.agents.resume({ resumeSessionId: sessionId, agentOptions })
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.endsWith('not found')) throw error
+      return this.ctx.agents.create({ sessionId, meta: { cwd: this.cwd }, agentOptions })
+    }
   }
 
   private hasAdapterFor(provider: string): boolean {
