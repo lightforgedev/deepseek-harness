@@ -242,6 +242,35 @@ describe('HarnessSdkJsonRpcServer', () => {
     await server.shutdown()
   })
 
+  it('cancels only a live SDK-owned session', async () => {
+    const cancel = vi.fn<Agent['cancel']>()
+    const agent = ({
+      id: SessionId('active'),
+      followup: vi.fn<Agent['followup']>(),
+      cancel,
+    } satisfies Pick<Agent, 'id' | 'followup' | 'cancel'>) as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    let live = true
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: {
+        create: vi.fn(async () => handle),
+        get: (id: SessionId) => live && String(id) === 'active' ? agent : undefined,
+      },
+      get: () => undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+
+    await server.prompt({ sessionId: 'active', contentBlocks: [{ type: 'text', text: 'work' }] })
+    expect(await server.handleRequest('session/cancel', { sessionId: 'active' })).toEqual({ canceled: true })
+    expect(cancel).toHaveBeenCalledExactlyOnceWith({ kind: 'user' })
+
+    expect(await server.handleRequest('session/cancel', { sessionId: 'missing' })).toEqual({ canceled: false })
+    live = false
+    expect(await server.handleRequest('session/cancel', { sessionId: 'active' })).toEqual({ canceled: false })
+    await server.shutdown()
+  })
+
   it('forwards whole-agent status without attributing a turn outcome', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
