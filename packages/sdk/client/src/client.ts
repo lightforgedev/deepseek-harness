@@ -21,6 +21,7 @@ import {
   type SessionPromptParams,
 } from '@deepseek-ai/dsh-sdk-protocol'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { SessionCancelParams } from '@deepseek-ai/dsh-sdk-protocol'
 import { disposeRuntimeProcess } from './dispose.ts'
 import type { HarnessClientOptions, HarnessNotification, NotificationFilter } from './types.ts'
 
@@ -287,6 +288,16 @@ export class HarnessClient {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
     }
     return result.messageId
+  }
+
+  /** Cooperatively cancel the current turn of one SDK session. */
+  async cancel(sessionId: string): Promise<boolean> {
+    const params: SessionCancelParams = { sessionId }
+    const result = await this.request('session/cancel', { ...params })
+    if (!isRecord(result) || typeof result.canceled !== 'boolean') {
+      throw new SdkProtocolError(`session/cancel returned no cancellation status: ${JSON.stringify(result)}`)
+    }
+    return result.canceled
   }
 
   /**

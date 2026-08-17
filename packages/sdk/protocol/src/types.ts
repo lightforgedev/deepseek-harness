@@ -44,6 +44,16 @@ export interface SessionPromptResult {
   messageId: string
 }
 
+/** Cancel the currently active turn for one existing SDK session. */
+export interface SessionCancelParams {
+  sessionId: string
+}
+
+/** Cancellation is accepted only when the server still owns the session. */
+export interface SessionCancelResult {
+  canceled: boolean
+}
+
 /** Deployment-mapped SDK outcome: `ok` for an accepted result, `error` otherwise. */
 export type SdkRunStatus = 'ok' | 'error'
 
@@ -101,5 +111,6 @@ export interface HarnessSdkNotificationMap {
 export interface HarnessSdkRequestMap {
   'initialize': { params: InitializeParams; result: InitializeResult }
   'session/prompt': { params: SessionPromptParams; result: SessionPromptResult }
+  'session/cancel': { params: SessionCancelParams; result: SessionCancelResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }

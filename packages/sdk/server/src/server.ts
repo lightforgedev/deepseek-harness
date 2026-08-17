@@ -21,6 +21,8 @@ import type {
   SessionEventNotification,
   SessionPromptParams,
   SessionPromptResult,
+  SessionCancelParams,
+  SessionCancelResult,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from '@deepseek-ai/dsh-sdk-protocol'
@@ -142,6 +144,16 @@ export class HarnessSdkJsonRpcServer {
     return { messageId: message.id }
   }
 
+  /** Cancel one active SDK-owned session without terminating sibling sessions. */
+  cancel(params: SessionCancelParams): SessionCancelResult {
+    const rec = this.sessions.get(params.sessionId)
+    if (rec === undefined || this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
+      return { canceled: false }
+    }
+    rec.handle.agent.cancel({ kind: 'user' })
+    return { canceled: true }
+  }
+
   /**
    * Dispose server-owned agents, adapter, and subscriptions to quiescence.
    * The surrounding context remains running.
@@ -193,6 +205,8 @@ export class HarnessSdkJsonRpcServer {
         return this.initialize(params as unknown as InitializeParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
+      case 'session/cancel':
+        return this.cancel(params as unknown as SessionCancelParams)
       case 'shutdown':
         return this.shutdown()
       default:
